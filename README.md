@@ -60,6 +60,7 @@ dataset/ece285_dataset/
 - `z = μ` (deterministic encoding, no sampling)
 - Spatial latent: 16× compression (512×512 → 32×32)
 - Checkpoint: `outputs/vae/checkpoints/best.pt` (~89MB)
+- **Pretrained:** Available at `./checkpoints/vae_best.pt` (tracked in git)
 
 ### 2. CLIP Token Precomputation
 
@@ -111,6 +112,8 @@ dataset/ece285_dataset/
 ## Repository Structure
 
 ```
+checkpoints/            # Pretrained model checkpoints (tracked in git)
+
 configs/
 ├── model/              # Model architectures (VAE, diffusion, CLIP)
 └── train/              # Training configs (overfit, full)
@@ -261,7 +264,11 @@ tail -f outputs/diffusion_rgb/logs/*.log
 ## Output Structure
 
 ```
-outputs/
+checkpoints/            # Pretrained checkpoints (tracked in git repo)
+├── vae_best.pt         # Pretrained VAE checkpoint (~89MB)
+└── ...                 # Other pretrained models
+
+outputs/                # Training outputs (gitignored)
 ├── vae/
 │   ├── checkpoints/
 │   │   ├── best.pt         # Lowest val loss
@@ -284,6 +291,8 @@ outputs/
     └── visualizations/
         └── epoch_*.png     # 4-column: coarse GT | refined GT | decoded coarse | prediction
 ```
+
+**Note:** The `./checkpoints/` folder at the repository root contains pretrained model weights that are tracked in git for easy access. Training outputs are saved to `./outputs/` and are gitignored.
 
 ---
 
