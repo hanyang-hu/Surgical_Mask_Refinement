@@ -23,6 +23,7 @@ from models.diffusion import (
     LatentDiffusionScheduler,
     DiffusionLoss
 )
+from utils.perceptual_loss import ToolTipFeaturePerceptionLoss, SOLD2FeaturePerceptionLoss
 from utils.checkpoint import save_checkpoint, load_checkpoint
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,34 @@ class RGBConditionedLatentDiffusionTrainer:
         self.eval_every_n_epochs = config['eval'].get('eval_every_n_epochs', 50)
         self.num_vis_samples = config['eval'].get('num_visualizations', 8)
         self.save_visualizations = config['eval'].get('save_visualizations', True)
+
+        # Perceptual loss config
+        self.use_perceptual_loss = config['train'].get('use_perceptual_loss', False)
+        if self.use_perceptual_loss:
+            self.tooltip_loss_weight = config['train'].get('tooltip_loss_weight', 0.1)
+            self.sold2_loss_weight = config['train'].get('sold2_loss_weight', 0.1)
+
+            # ToolTipNet perceptual loss
+            self.tooltip_criterion = ToolTipFeaturePerceptionLoss(
+                checkpoint_path="./checkpoints/tooltipnet.pth",
+                detector_mask_size=224,
+                use_attention=False,
+                feature_weights={
+                    "c2": 0.,
+                    "c3": 0.,
+                    "c4": 0.,
+                    "c5": 0.,
+                    "fpn_feat": 1.0,
+                },
+                loss_type="l2",
+            ).to(device)
+
+            # SOLD2 perceptual loss
+            self.sold2_criterion = SOLD2FeaturePerceptionLoss(
+                pretrained=True,
+                input_size=(224, 224),
+                loss_type="l2",
+            ).to(device)
         
         # Verify VAE is frozen
         self._verify_vae_frozen()
@@ -179,8 +208,45 @@ class RGBConditionedLatentDiffusionTrainer:
             self.optimizer.zero_grad()
             eps_pred = self.model(z_t, timesteps, z_coarse, rgb_tokens)  # [B, 8, 32, 32]
             
+            # # Compute epsilon-prediction loss
+            # loss = self.criterion(eps_pred, noise)
+
+            # # Compute perceptual losses if enabled
+            # if self.use_perceptual_loss:
+            #     # Reconstruct predicted x0 from epsilon
+            #     x0_pred = self.scheduler.predict_x0_from_eps(z_t, timesteps, eps_pred)  # [B, 8, 32, 32]
+            #     x0_pred_decoded = self.vae_interface.decode_to_probs(x0_pred)  # [B, 1, 512, 512]
+
+            #     # Compute loss between refined mask and predicted mask
+            #     tooltip_loss = self.tooltip_criterion(x0_pred_decoded, refined_mask)
+            #     sold2_loss = self.sold2_criterion(x0_pred_decoded, refined_mask)
+
+            #     # Combine losses
+            #     loss = loss + self.tooltip_loss_weight * tooltip_loss + self.sold2_loss_weight * sold2_loss
+
             # Compute epsilon-prediction loss
-            loss = self.criterion(eps_pred, noise)
+            diffusion_loss = self.criterion(eps_pred, noise)
+
+            tooltip_loss = torch.tensor(0.0, device=self.device)
+            sold2_loss = torch.tensor(0.0, device=self.device)
+            tooltip_weighted = torch.tensor(0.0, device=self.device)
+            sold2_weighted = torch.tensor(0.0, device=self.device)
+
+            # Compute perceptual losses if enabled
+            if self.use_perceptual_loss:
+                # Reconstruct predicted x0 from epsilon
+                x0_pred = self.scheduler.predict_x0_from_eps(z_t, timesteps, eps_pred)
+                x0_pred_decoded = self.vae_interface.decode_to_probs(x0_pred)
+
+                # Compute loss between refined mask and predicted mask
+                tooltip_loss = self.tooltip_criterion(x0_pred_decoded, refined_mask)
+                sold2_loss = self.sold2_criterion(x0_pred_decoded, refined_mask)
+
+                tooltip_weighted = self.tooltip_loss_weight * tooltip_loss
+                sold2_weighted = self.sold2_loss_weight * sold2_loss
+
+            # Total loss
+            loss = diffusion_loss + tooltip_weighted + sold2_weighted
             
             # Check for NaN/Inf
             if not torch.isfinite(loss):
@@ -211,7 +277,12 @@ class RGBConditionedLatentDiffusionTrainer:
             # Log to wandb
             if self.use_wandb and (self.global_step % self.log_every_n_steps == 0):
                 wandb_metrics = {
-                    'train/loss': loss.item(),
+                    'train/loss_total': loss.item(),
+                    'train/loss_diffusion': diffusion_loss.item(),
+                    'train/loss_tooltip': tooltip_loss.item(),
+                    'train/loss_sold2': sold2_loss.item(),
+                    'train/loss_tooltip_weighted': tooltip_weighted.item(),
+                    'train/loss_sold2_weighted': sold2_weighted.item(),
                     'train/step': self.global_step,
                     'train/epoch': self.current_epoch,
                     'train/z_coarse_std': z_coarse.std().item(),
@@ -271,8 +342,45 @@ class RGBConditionedLatentDiffusionTrainer:
             # Predict noise with RGB conditioning
             eps_pred = self.model(z_t, timesteps, z_coarse, rgb_tokens)
             
-            # Compute loss
-            loss = self.criterion(eps_pred, noise)
+            # # Compute loss
+            # loss = self.criterion(eps_pred, noise)
+            
+            # # Compute perceptual losses if enabled
+            # if self.use_perceptual_loss:
+            #     # Reconstruct predicted x0 from epsilon
+            #     x0_pred = self.scheduler.predict_x0_from_eps(z_t, timesteps, eps_pred)  # [B, 8, 32, 32]
+            #     x0_pred_decoded = self.vae_interface.decode_to_probs(x0_pred)  # [B, 1, 512, 512]
+
+            #     # Compute loss between refined mask and predicted mask
+            #     tooltip_loss = self.tooltip_criterion(x0_pred_decoded, refined_mask)
+            #     sold2_loss = self.sold2_criterion(x0_pred_decoded, refined_mask)
+
+            #     # Combine losses
+            #     loss = loss + self.tooltip_loss_weight * tooltip_loss + self.sold2_loss_weight * sold2_loss
+
+            # Compute epsilon-prediction loss
+            diffusion_loss = self.criterion(eps_pred, noise)
+
+            tooltip_loss = torch.tensor(0.0, device=self.device)
+            sold2_loss = torch.tensor(0.0, device=self.device)
+            tooltip_weighted = torch.tensor(0.0, device=self.device)
+            sold2_weighted = torch.tensor(0.0, device=self.device)
+
+            # Compute perceptual losses if enabled
+            if self.use_perceptual_loss:
+                # Reconstruct predicted x0 from epsilon
+                x0_pred = self.scheduler.predict_x0_from_eps(z_t, timesteps, eps_pred)
+                x0_pred_decoded = self.vae_interface.decode_to_probs(x0_pred)
+
+                # Compute loss between refined mask and predicted mask
+                tooltip_loss = self.tooltip_criterion(x0_pred_decoded, refined_mask)
+                sold2_loss = self.sold2_criterion(x0_pred_decoded, refined_mask)
+
+                tooltip_weighted = self.tooltip_loss_weight * tooltip_loss
+                sold2_weighted = self.sold2_loss_weight * sold2_loss
+
+            # Total loss
+            loss = diffusion_loss + tooltip_weighted + sold2_weighted
             
             loss_sum += loss.item()
             num_batches += 1

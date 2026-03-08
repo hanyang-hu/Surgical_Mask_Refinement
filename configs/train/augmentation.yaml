@@ -1,0 +1,25 @@
+augment_prob: 0.5
+
+# hflip_prob: 0.5
+# vflip_prob: 0.5
+
+erode_prob: 0.4
+dilate_prob: 0.4
+edge_blob_prob: 0.5
+drop_parts_prob: 0.4
+cutout_prob: 0.03
+
+erode_kernel_range: [3, 9]
+dilate_kernel_range: [3, 9]
+
+erode_iter_range: [1, 2]
+dilate_iter_range: [1, 2]
+
+edge_blob_count_range: [1, 4]
+edge_blob_radius_range: [4, 16]
+
+drop_parts_count_range: [1, 3]
+drop_parts_radius_range: [6, 18]
+
+cutout_count_range: [1, 3]
+cutout_size_range: [8, 40]
