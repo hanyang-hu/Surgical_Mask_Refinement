@@ -1,0 +1,63 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Python cache and bytecode
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+
+# Data directories (mounted at runtime)
+dataset/
+data/
+datasets/
+
+# Output directories (mounted at runtime)
+outputs/
+output/
+results/
+logs/
+runs/
+
+# Model checkpoints (can be large)
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Documentation
+*.md
+docs/
+
+# Jupyter notebooks (can be large with outputs)
+*.ipynb_checkpoints/
+
+# Temporary files
+tmp/
+temp/
+*.tmp

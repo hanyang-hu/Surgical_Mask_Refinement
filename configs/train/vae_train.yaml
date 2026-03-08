@@ -1,0 +1,63 @@
+# VAE Training Configuration
+
+# Training hyperparameters
+train:
+  epochs: 50
+  batch_size: 8
+  num_workers: 4
+  learning_rate: 0.0001
+  weight_decay: 0.0
+  grad_clip_norm: 1.0
+  log_every_n_steps: 50
+  val_every_n_epochs: 1
+  save_every_n_epochs: 1
+  mixed_precision: false
+  seed: 42
+
+# Dataset configuration
+data:
+  metadata_dir: "data/metadata"
+  split_train: "train"
+  split_val: "val"
+  source: "all"
+  mask_type: "refined"
+  image_size: 512
+  augment_train: false
+
+# Optimizer configuration
+optimizer:
+  type: "adam"
+  betas: [0.9, 0.999]
+  eps: 0.00000001
+
+# Learning rate scheduler (optional)
+scheduler:
+  use_scheduler: false
+  type: "cosine"
+  warmup_epochs: 5
+
+# Checkpoint configuration
+checkpoint:
+  output_dir: "/workspace/ece285/outputs/vae"
+  save_best: true
+  monitor: "val/loss"
+  mode: "min"
+  save_latest: true
+  save_epoch_checkpoints: false
+
+# Visualization configuration
+visualization:
+  num_samples: 4
+  save_reconstructions: true
+  save_every_n_epochs: 1
+
+# Weights & Biases configuration
+wandb:
+  use_wandb: true
+  project: "surgical-mask-vae"
+  run_name: null
+  mode: "online"
+seed: 42
+
+# Device
+device: "cuda"

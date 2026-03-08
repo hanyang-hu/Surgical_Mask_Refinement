@@ -1,0 +1,36 @@
+# Latent Diffusion Model Configuration
+# Baseline configuration WITHOUT CLIP conditioning
+
+# Model architecture
+model:
+  in_channels: 16           # z_t (8) + z_coarse (8)
+  out_channels: 8           # epsilon prediction (same as latent channels)
+  base_channels: 64         # Base channel multiplier
+  channel_multipliers: [1, 2, 4]  # Channel multipliers for each level [64, 128, 256]
+  num_res_blocks: 1         # Number of residual blocks per level
+  time_embed_dim: 256       # Time embedding dimension
+  norm: "group"             # Normalization type ('group', 'batch', 'none')
+  activation: "silu"        # Activation function ('silu', 'relu')
+  dropout: 0.0              # Dropout probability
+
+# Diffusion scheduler
+scheduler:
+  num_train_timesteps: 1000  # Number of diffusion steps
+  beta_schedule: "linear"    # Beta schedule type ('linear' or 'cosine')
+  beta_start: 0.0001         # Starting beta value (1e-4)
+  beta_end: 0.02             # Ending beta value (2e-2)
+
+# Latent space configuration
+latent:
+  channels: 8               # Latent channels (from VAE)
+  spatial_size: 32          # Latent spatial resolution (32x32)
+
+# Input configuration
+input:
+  image_size: 512           # Original image size
+  mask_channels: 1          # Mask channels
+
+# Loss configuration
+loss:
+  type: "mse"               # Loss type ('mse' or 'l1')
+  reduction: "mean"         # Reduction type ('mean', 'sum', 'none')

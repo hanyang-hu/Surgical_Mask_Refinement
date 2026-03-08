@@ -1,0 +1,49 @@
+# Latent Diffusion Model Configuration
+
+# Denoising UNet architecture
+unet:
+  in_channels: 1  # VAE latent channels
+  out_channels: 1
+  model_channels: 128
+  channel_mult: [1, 2, 4, 8]
+  num_res_blocks: 2
+  attention_resolutions: [16, 8]
+  dropout: 0.1
+  # TODO: Add more UNet details (group norm, heads, etc.)
+
+# Time embedding
+time_embedding:
+  dim: 512
+  freq_embed_dim: 256
+
+# Conditioning (CLIP tokens)
+conditioning:
+  type: "cross_attention"  # or "concat", "adaptive_norm"
+  clip_token_dim: 768
+  num_heads: 8
+  context_dim: 768
+  # TODO: Add conditioning architecture details
+
+# Diffusion scheduler
+scheduler:
+  type: "ddpm"  # or "ddim", "pndm"
+  num_train_timesteps: 1000
+  beta_schedule: "linear"  # or "scaled_linear", "squaredcos_cap_v2"
+  beta_start: 0.0001
+  beta_end: 0.02
+  clip_sample: false
+  # TODO: Add scheduler-specific parameters
+
+# Conditioning inputs
+condition_on:
+  clip_tokens: true
+  coarse_mask: true  # can concatenate or add to input
+
+# Loss
+loss_type: "mse"  # or "l1", "huber"
+
+# Guidance (for inference)
+guidance:
+  classifier_free_guidance: false
+  guidance_scale: 7.5
+  unconditional_prob: 0.1  # during training, drop conditioning

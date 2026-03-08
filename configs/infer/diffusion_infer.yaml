@@ -1,0 +1,46 @@
+# Diffusion Inference Configuration
+
+# Model checkpoints
+vae_checkpoint: "/workspace/ece285/outputs/vae/best_model.pth"
+diffusion_checkpoint: "/workspace/ece285/outputs/diffusion/best_model.pth"
+
+# Model configs
+vae_config: "configs/model/vae.yaml"
+diffusion_config: "configs/model/diffusion.yaml"
+
+# Inference settings
+inference:
+  num_inference_steps: 50  # DDIM steps
+  guidance_scale: 7.5  # classifier-free guidance strength
+  eta: 0.0  # DDIM eta parameter (0.0 = deterministic)
+  
+# Input data
+input:
+  # Can specify specific samples or use test set
+  use_test_set: true
+  # Or specific image paths
+  rgb_image_path: null
+  coarse_mask_path: null
+  
+# Output settings
+output:
+  save_dir: "/workspace/ece285/outputs/inference"
+  save_intermediates: false  # save denoising steps
+  save_format: "png"
+  
+# Postprocessing
+postprocessing:
+  binarize: true
+  threshold: 0.5
+  
+# Batch processing
+batch_size: 8
+
+# Device
+device: "cuda"
+precision: "fp16"
+
+# Visualization
+visualization:
+  create_comparison_grid: true
+  save_individual: true

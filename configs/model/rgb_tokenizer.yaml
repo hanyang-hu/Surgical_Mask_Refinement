@@ -1,0 +1,24 @@
+# CLIP Vision Tokenizer Configuration
+
+# Pretrained model configuration
+model_name: "openai/clip-vit-base-patch16"  # Hugging Face model name or local path
+freeze: true                                 # Freeze CLIP weights (no training)
+
+# Input/output configuration
+clip_input_size: 224                        # CLIP expects 224x224 input
+remove_cls_token: true                      # Remove CLS token from output (use only patch tokens)
+return_spatial_map: true                    # Return spatial feature map [B, C, H, W]
+
+# Device configuration
+device: null                                # null = auto-detect (cuda if available, else cpu)
+dtype: "float32"                            # Model dtype (float32, float16, bfloat16)
+
+# Optional adapter configuration
+use_adapter: false                          # Whether to use learnable adapter
+adapter_type: "linear"                      # Adapter type: 'linear', 'conv1x1', 'mlp'
+adapter_out_dim: null                       # Output dimension for adapter (required if use_adapter=true)
+
+# Expected output shapes (for reference)
+# Input: RGB [B, 3, 512, 512] in range [0, 1]
+# Tokens: [B, 196, 768] (ViT-B/16 at 224x224)
+# Spatial map: [B, 768, 14, 14] (14x14 patch grid)

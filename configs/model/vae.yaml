@@ -1,0 +1,32 @@
+# Mask VAE Configuration
+# Convolutional VAE for learning latent representations of surgical instrument masks
+
+# Model architecture
+model:
+  in_channels: 1  # Binary mask input
+  base_channels: 32  # Base channel width
+  channel_multipliers: [1, 2, 4, 8]  # Channel progression (32 -> 64 -> 128 -> 256)
+  latent_channels: 8  # Number of latent channels
+  num_res_blocks: 1  # Residual blocks per stage
+  norm: "batch"  # Normalization: batch, instance, or group
+  activation:  "silu"  # Activation function: silu, relu, or gelu
+
+# Latent space configuration
+latent:
+  # With 4 downsampling stages (channel_multipliers has 4 values):
+  # 512 -> 256 -> 128 -> 64 -> 32
+  # Latent shape: [latent_channels, 32, 32]
+  spatial_size: 32  # Expected latent spatial dimension
+  downsampling_factor: 16  # Total downsampling (2^4 = 16)
+
+# Loss configuration
+loss:
+  recon_loss_type: "bce_dice"  # Reconstruction loss: bce, dice, or bce_dice
+  beta: 0.0001  # KL divergence weight (beta-VAE)
+  bce_weight: 1.0  # Weight for BCE in combined loss
+  dice_weight: 1.0  # Weight for Dice in combined loss
+
+# Input specification
+input:
+  image_size: 512  # Input mask size (512x512)
+  channels: 1  # Grayscale binary mask

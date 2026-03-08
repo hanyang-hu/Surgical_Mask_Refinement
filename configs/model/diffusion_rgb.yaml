@@ -1,0 +1,45 @@
+# RGB-Conditioned Latent Diffusion Model Configuration
+# Extends baseline with RGB CLIP token conditioning via cross-attention
+
+model:
+  # Core U-Net architecture (same as baseline)
+  in_channels: 16          # z_t (8) + z_coarse (8)
+  out_channels: 8          # predicted epsilon
+  base_channels: 64
+  channel_multipliers: [1, 2, 4]  # [64, 128, 256]
+  num_res_blocks: 1
+  time_embed_dim: 256
+  norm: "group"
+  activation: "silu"
+  dropout: 0.0
+
+# RGB conditioning configuration
+rgb_condition:
+  enabled: true
+  token_dim: 768           # CLIP ViT-B/16@224px token dimension (openai/clip-vit-base-patch16)
+  projected_dim: 256       # Project tokens to this dimension for cross-attention
+  num_heads: 4             # Multi-head cross-attention
+  dropout: 0.0
+  use_cross_attention: true
+  cross_attention_at_mid: true  # Apply cross-attention at bottleneck
+
+# Diffusion scheduler (same as baseline)
+scheduler:
+  num_train_timesteps: 1000
+  beta_schedule: "linear"
+  beta_start: 1.0e-4       # 0.0001
+  beta_end: 2.0e-2         # 0.02
+
+# Latent space configuration (frozen VAE)
+latent:
+  channels: 8
+  spatial_size: 32
+  use_mu_only: true        # Deterministic encoding (z = mu)
+
+# Loss configuration
+loss:
+  type: "mse"               # Loss type ('mse' or 'l1')
+  reduction: "mean"         # Reduction type ('mean', 'sum', 'none')
+
+# Model type
+model_type: "rgb_conditioned"  # vs "baseline"
