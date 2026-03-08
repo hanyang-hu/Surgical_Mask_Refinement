@@ -46,6 +46,12 @@ ipython_config.py
 *.ckpt
 *.safetensors
 checkpoints/
+# But allow root-level checkpoints folder and its contents
+!/checkpoints/
+!/checkpoints/**
+!/checkpoints/**/*.pt
+!/checkpoints/**/*.pth
+!/checkpoints/**/*.ckpt
 
 # Training outputs
 outputs/
