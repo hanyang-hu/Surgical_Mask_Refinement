@@ -17,6 +17,11 @@ from PIL import Image
 
 from data.transforms import build_transforms, binarize_mask
 
+import cv2
+import numpy as np
+import yaml
+import random
+
 
 # ============================================================================
 # Helper Functions
@@ -153,6 +158,7 @@ def validate_token_record(
 # Token-Conditioned Mask Dataset
 # ============================================================================
 
+
 class TokenConditionedMaskDataset(Dataset):
     """Dataset that loads masks with precomputed RGB CLIP tokens.
     
@@ -214,15 +220,19 @@ class TokenConditionedMaskDataset(Dataset):
         
         # Load metadata
         self.samples = self._load_metadata()
+
+        # Augmentation: keep interface unchanged, enable automatically for train split
+        self.apply_augmentation = (self.split == "train")
+        self._load_augmentation_config()
         
         # Build transform
         if transform is None:
-            # Use deterministic eval transforms from Step 2
-            # We only need mask transforms here (no RGB)
+            # Keep the same default behavior as the original implementation:
+            # deterministic transform pipeline, no transform-level augmentation.
             self.transform = build_transforms(
-                image_size=self.image_size[0],  # Assumes square
-                train=False,  # Deterministic
-                augment=False  # No augmentation
+                image_size=self.image_size[0],  # assumes square for existing pipeline
+                train=False,
+                augment=False
             )
         else:
             self.transform = transform
@@ -233,7 +243,59 @@ class TokenConditionedMaskDataset(Dataset):
         print(f"  Samples: {len(self.samples)}")
         print(f"  Image size: {self.image_size}")
         print(f"  Strict tokens: {strict_tokens}")
-    
+        print(f"  Apply augmentation: {self.apply_augmentation}")
+
+    def _load_augmentation_config(self) -> None:
+        """Load coarse-mask augmentation config from YAML."""
+        aug_config_path = Path("configs/train/augmentation.yaml")
+
+        # Defaults match your SurgicalMaskRefinementDataset behavior
+        defaults = {
+            "augment_prob": 0.5,
+            "erode_prob": 0.4,
+            "dilate_prob": 0.4,
+            "edge_blob_prob": 0.5,
+            "drop_parts_prob": 0.4,
+            "cutout_prob": 0.01,
+            "erode_kernel_range": [3, 9],
+            "dilate_kernel_range": [3, 9],
+            "erode_iter_range": [1, 2],
+            "dilate_iter_range": [1, 2],
+            "edge_blob_count_range": [1, 4],
+            "edge_blob_radius_range": [4, 16],
+            "drop_parts_count_range": [1, 3],
+            "drop_parts_radius_range": [6, 18],
+            "cutout_count_range": [1, 3],
+            "cutout_size_range": [8, 40],
+        }
+
+        if aug_config_path.exists():
+            with open(aug_config_path, "r") as f:
+                aug_config = yaml.safe_load(f) or {}
+        else:
+            print(f"Warning: augmentation config not found at {aug_config_path}, using defaults.")
+            aug_config = {}
+
+        self.augment_prob = aug_config.get("augment_prob", defaults["augment_prob"])
+        self.erode_prob = aug_config.get("erode_prob", defaults["erode_prob"])
+        self.dilate_prob = aug_config.get("dilate_prob", defaults["dilate_prob"])
+        self.edge_blob_prob = aug_config.get("edge_blob_prob", defaults["edge_blob_prob"])
+        self.drop_parts_prob = aug_config.get("drop_parts_prob", defaults["drop_parts_prob"])
+        self.cutout_prob = aug_config.get("cutout_prob", defaults["cutout_prob"])
+
+        self.erode_kernel_range = tuple(aug_config.get("erode_kernel_range", defaults["erode_kernel_range"]))
+        self.dilate_kernel_range = tuple(aug_config.get("dilate_kernel_range", defaults["dilate_kernel_range"]))
+        self.erode_iter_range = tuple(aug_config.get("erode_iter_range", defaults["erode_iter_range"]))
+        self.dilate_iter_range = tuple(aug_config.get("dilate_iter_range", defaults["dilate_iter_range"]))
+        self.edge_blob_count_range = tuple(aug_config.get("edge_blob_count_range", defaults["edge_blob_count_range"]))
+        self.edge_blob_radius_range = tuple(aug_config.get("edge_blob_radius_range", defaults["edge_blob_radius_range"]))
+        self.drop_parts_count_range = tuple(aug_config.get("drop_parts_count_range", defaults["drop_parts_count_range"]))
+        self.drop_parts_radius_range = tuple(aug_config.get("drop_parts_radius_range", defaults["drop_parts_radius_range"]))
+        self.cutout_count_range = tuple(aug_config.get("cutout_count_range", defaults["cutout_count_range"]))
+        self.cutout_size_range = tuple(aug_config.get("cutout_size_range", defaults["cutout_size_range"]))
+
+        self.rng = random.Random()
+
     def _load_metadata(self) -> List[Dict]:
         """Load and filter metadata from split file."""
         split_file = self.metadata_dir / f"{self.split}.json"
@@ -264,6 +326,134 @@ class TokenConditionedMaskDataset(Dataset):
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
         return len(self.samples)
+
+    def _rand_odd(self, low: int, high: int) -> int:
+        """Sample an odd integer in [low, high]."""
+        k = self.rng.randint(low, high)
+        if k % 2 == 0:
+            k += 1
+        return k
+
+    def _pil_mask_to_binary_np(self, mask: Image.Image) -> np.ndarray:
+        """Convert PIL mask to binary uint8 numpy array with values {0,255}."""
+        arr = np.array(mask.convert("L"), dtype=np.uint8)
+        _, arr = cv2.threshold(arr, 127, 255, cv2.THRESH_BINARY)
+        return arr
+
+    def _binary_np_to_pil(self, mask: np.ndarray) -> Image.Image:
+        """Convert binary uint8 numpy mask back to PIL Image."""
+        mask = np.ascontiguousarray(mask.astype(np.uint8))
+        return Image.fromarray(mask, mode="L")
+
+    def _edge_band(self, mask: np.ndarray, ksize: int = 5) -> np.ndarray:
+        """Compute a thin band around mask edges."""
+        kernel = np.ones((ksize, ksize), np.uint8)
+        dilated = cv2.dilate(mask, kernel, iterations=1)
+        return cv2.subtract(dilated, mask)
+
+    def _add_edge_blobs(self, mask: np.ndarray) -> np.ndarray:
+        """Add random blobs along the boundary."""
+        edge = self._edge_band(mask, ksize=5)
+        ys, xs = np.where(edge > 0)
+
+        if len(xs) == 0:
+            return mask
+
+        out = mask.copy()
+        n_blobs = self.rng.randint(*self.edge_blob_count_range)
+
+        for _ in range(n_blobs):
+            idx = self.rng.randrange(len(xs))
+            x, y = int(xs[idx]), int(ys[idx])
+            radius = self.rng.randint(*self.edge_blob_radius_range)
+            cv2.circle(out, (x, y), radius, 255, thickness=-1)
+
+        return out
+
+    def _drop_parts(self, mask: np.ndarray) -> np.ndarray:
+        """Remove random local regions near the boundary."""
+        edge = self._edge_band(mask, ksize=3)
+        ys, xs = np.where(edge > 0)
+
+        if len(xs) == 0:
+            return mask
+
+        out = mask.copy()
+        n_parts = self.rng.randint(*self.drop_parts_count_range)
+
+        for _ in range(n_parts):
+            idx = self.rng.randrange(len(xs))
+            x, y = int(xs[idx]), int(ys[idx])
+            radius = self.rng.randint(*self.drop_parts_radius_range)
+            cv2.circle(out, (x, y), radius, 0, thickness=-1)
+
+        return out
+
+    def _random_cutout(self, mask: np.ndarray) -> np.ndarray:
+        """Randomly zero out square regions inside the mask."""
+        ys, xs = np.where(mask > 0)
+
+        if len(xs) == 0:
+            return mask
+
+        out = mask.copy()
+        n_cutouts = self.rng.randint(*self.cutout_count_range)
+
+        for _ in range(n_cutouts):
+            idx = self.rng.randrange(len(xs))
+            cx, cy = int(xs[idx]), int(ys[idx])
+            half = self.rng.randint(*self.cutout_size_range)
+
+            x1 = max(0, cx - half)
+            y1 = max(0, cy - half)
+            x2 = min(mask.shape[1], cx + half)
+            y2 = min(mask.shape[0], cy + half)
+
+            out[y1:y2, x1:x2] = 0
+
+        return out
+
+    def _augment_coarse_mask_only(self, coarse_mask: np.ndarray) -> np.ndarray:
+        """Apply coarse-mask-only augmentation in numpy space."""
+        mask = coarse_mask.copy()
+
+        if self.rng.random() < self.erode_prob:
+            k = self._rand_odd(*self.erode_kernel_range)
+            iters = self.rng.randint(*self.erode_iter_range)
+            kernel = np.ones((k, k), np.uint8)
+            mask = cv2.erode(mask, kernel, iterations=iters)
+
+        if self.rng.random() < self.dilate_prob:
+            k = self._rand_odd(*self.dilate_kernel_range)
+            iters = self.rng.randint(*self.dilate_iter_range)
+            kernel = np.ones((k, k), np.uint8)
+            mask = cv2.dilate(mask, kernel, iterations=iters)
+
+        if self.rng.random() < self.edge_blob_prob:
+            mask = self._add_edge_blobs(mask)
+
+        if self.rng.random() < self.drop_parts_prob:
+            mask = self._drop_parts(mask)
+
+        if self.rng.random() < self.cutout_prob:
+            mask = self._random_cutout(mask)
+
+        _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
+        return mask
+
+    def _maybe_augment_coarse_mask_pil(self, coarse_mask: Image.Image) -> Image.Image:
+        """Apply coarse-mask-only augmentation, preserving PIL interface."""
+        if not self.apply_augmentation:
+            return coarse_mask
+
+        if self.rng.random() >= self.augment_prob:
+            return coarse_mask
+        
+        # raise NotImplementedError("Augmentation is currently always enabled for train split. The augment_prob parameter will control the actual augmentation rate. Setting apply_augmentation=False is not implemented yet, but will be the default in the future. Please set apply_augmentation=True for now.")
+
+        coarse_np = self._pil_mask_to_binary_np(coarse_mask)
+        coarse_np = self._augment_coarse_mask_only(coarse_np)
+        return self._binary_np_to_pil(coarse_np)
     
     def __getitem__(self, idx: int) -> Dict:
         """Load and return a single sample.
@@ -298,14 +488,20 @@ class TokenConditionedMaskDataset(Dataset):
                 f"  Error: {e}"
             )
         
-        # Apply transforms (deterministic preprocessing)
-        # Transform expects (rgb, coarse_mask, refined_mask) but we pass None for rgb
-        # This works because our transform pipeline handles mask-only cases
+        # Apply coarse-mask-only augmentation before paired transforms
         try:
-            # Create a dummy RGB image (we won't use it)
+            coarse_mask = self._maybe_augment_coarse_mask_pil(coarse_mask)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to augment coarse mask for sample {sample_id}:\n"
+                f"  Coarse: {coarse_mask_path}\n"
+                f"  Error: {e}"
+            )
+
+        # Apply transforms (deterministic preprocessing / user-supplied pipeline)
+        # Transform expects (rgb, coarse_mask, refined_mask), so we pass dummy RGB.
+        try:
             dummy_rgb = Image.new('RGB', coarse_mask.size, color=(0, 0, 0))
-            
-            # Apply paired transforms
             _, coarse_mask_t, refined_mask_t = self.transform(
                 dummy_rgb, coarse_mask, refined_mask
             )
@@ -319,7 +515,6 @@ class TokenConditionedMaskDataset(Dataset):
             token_record = load_token_record(token_path)
             
             if self.strict_tokens:
-                # Validate token record
                 validate_token_record(
                     token_record,
                     expected_source=source,
@@ -335,8 +530,6 @@ class TokenConditionedMaskDataset(Dataset):
                     f"  Hint: Run precomputation for split={self.split}, source={source}"
                 ) from e
             else:
-                # Non-strict mode: skip this sample by returning a dummy
-                # (In practice, you might want to filter these at init time)
                 raise NotImplementedError(
                     "Non-strict token loading not fully implemented. "
                     "Please run token precomputation first."
@@ -371,7 +564,7 @@ class TokenConditionedMaskDataset(Dataset):
         """Return counts of samples by source."""
         from collections import Counter
         return dict(Counter(s['source'] for s in self.samples))
-
+    
 
 # ============================================================================
 # Utility Functions

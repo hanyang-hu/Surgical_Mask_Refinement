@@ -239,8 +239,13 @@ class RGBConditionedLatentDiffusionTrainer:
                 x0_pred_decoded = self.vae_interface.decode_to_probs(x0_pred)
 
                 # Compute loss between refined mask and predicted mask
-                tooltip_loss, _ = self.tooltip_criterion(x0_pred_decoded, refined_mask)
-                sold2_loss, _ = self.sold2_criterion(x0_pred_decoded, refined_mask)
+                if self.tooltip_loss_weight > 0.0:
+                    tooltip_loss, _ = self.tooltip_criterion(x0_pred_decoded, refined_mask)
+                if self.sold2_loss_weight > 0.0:
+                    sold2_loss, _ = self.sold2_criterion(x0_pred_decoded, refined_mask)
+
+                # print(self.tooltip_loss_weight, self.sold2_loss_weight
+                #       , tooltip_loss.item(), sold2_loss.item()                )
 
                 tooltip_weighted = self.tooltip_loss_weight * tooltip_loss
                 sold2_weighted = self.sold2_loss_weight * sold2_loss
@@ -274,8 +279,8 @@ class RGBConditionedLatentDiffusionTrainer:
             # Update progress bar
             pbar.set_postfix({'loss': f"{loss.item():.4f}"})
 
-            print(f"Step {self.global_step}: loss={loss.item():.4f}, diffusion_loss={diffusion_loss.item():.4f}, "
-                  f"tooltip_loss={tooltip_loss.item():.4f}, sold2_loss={sold2_loss.item():.4f}")
+            # print(f"Step {self.global_step}: loss={loss.item():.4f}, diffusion_loss={diffusion_loss.item():.4f}, "
+            #       f"tooltip_loss={tooltip_loss.item():.4f}, sold2_loss={sold2_loss.item():.4f}")
             
             # Log to wandb
             if self.use_wandb and (self.global_step % self.log_every_n_steps == 0):
@@ -376,8 +381,10 @@ class RGBConditionedLatentDiffusionTrainer:
                 x0_pred_decoded = self.vae_interface.decode_to_probs(x0_pred)
 
                 # Compute loss between refined mask and predicted mask
-                tooltip_loss = self.tooltip_criterion(x0_pred_decoded, refined_mask)
-                sold2_loss = self.sold2_criterion(x0_pred_decoded, refined_mask)
+                if self.tooltip_loss_weight > 0.0:
+                    tooltip_loss, _ = self.tooltip_criterion(x0_pred_decoded, refined_mask)
+                if self.sold2_loss_weight > 0.0:
+                    sold2_loss, _ = self.sold2_criterion(x0_pred_decoded, refined_mask)
 
                 tooltip_weighted = self.tooltip_loss_weight * tooltip_loss
                 sold2_weighted = self.sold2_loss_weight * sold2_loss

@@ -78,6 +78,6 @@ wandb:
   
 # Auxiliary losses
 auxiliary_losses:
-  use_perceptual_loss: true  # Enable perceptual loss
+  use_perceptual_loss: false  # Enable perceptual loss
   tooltip_loss_weight: 0.05  # Weight for ToolTipNet perceptual loss
   sold2_loss_weight: 0.05  # Weight for SOLD2 perceptual loss
