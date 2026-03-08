@@ -43,7 +43,7 @@ def parse_args():
     parser.add_argument(
         "--split",
         type=str,
-        default="train",
+        default="all",
         choices=["train", "val", "test", "all"],
         help="Which split to process (default: train)"
     )

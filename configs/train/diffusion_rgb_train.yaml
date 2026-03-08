@@ -77,7 +77,8 @@ wandb:
   tags: ["full-training", "rgb-conditioned", "step12"]
 
 # Auxiliary losses
-use_perceptual_loss: true  # Enable perceptual loss
-tooltip_loss_weight: 0.1  # Weight for ToolTipNet perceptual loss
-sold2_loss_weight: 0.1  # Weight for SOLD2 perceptual loss
+auxiliary_losses:
+  use_perceptual_loss: true  # Enable perceptual loss
+  tooltip_loss_weight: 0.05  # Weight for ToolTipNet perceptual loss
+  sold2_loss_weight: 0.05  # Weight for SOLD2 perceptual loss
 
