@@ -8,7 +8,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -81,6 +81,63 @@ def _extract_model_state(checkpoint: Dict) -> Dict:
     return checkpoint
 
 
+def _strip_common_prefix(key: str) -> str:
+    """Strip training wrappers from checkpoint keys."""
+    for prefix in ("model.", "module."):
+        if key.startswith(prefix):
+            return key[len(prefix):]
+    return key
+
+
+def _adapt_state_dict_for_baseline_model(
+    state_dict: Dict[str, torch.Tensor],
+    model: LatentDiffusionUNet,
+) -> Tuple[Dict[str, torch.Tensor], Dict[str, int]]:
+    """Adapt checkpoint keys to baseline model naming.
+
+    This handles backward/sideways compatibility when a checkpoint uses
+    wrapped key prefixes and/or an older bottleneck naming scheme.
+    """
+    model_keys = set(model.state_dict().keys())
+    adapted: Dict[str, torch.Tensor] = {}
+    remap_counts = {
+        "prefix_stripped": 0,
+        "mid_block1_to_mid_block": 0,
+        "mid_block2_dropped": 0,
+        "rgb_conditioner_dropped": 0,
+    }
+
+    for raw_key, value in state_dict.items():
+        key = _strip_common_prefix(raw_key)
+        if key != raw_key:
+            remap_counts["prefix_stripped"] += 1
+
+        # RGB-conditioned checkpoints contain extra modules unsupported by the
+        # baseline inference model. We intentionally drop them.
+        if key.startswith("rgb_conditioner."):
+            remap_counts["rgb_conditioner_dropped"] += 1
+            continue
+
+        # Compatibility: map first bottleneck block onto baseline mid_block.
+        if key.startswith("mid_block1."):
+            candidate = "mid_block." + key[len("mid_block1."):]
+            if candidate in model_keys:
+                adapted[candidate] = value
+                remap_counts["mid_block1_to_mid_block"] += 1
+            continue
+
+        # RGB-conditioned model has a second bottleneck block with no baseline
+        # equivalent.
+        if key.startswith("mid_block2."):
+            remap_counts["mid_block2_dropped"] += 1
+            continue
+
+        if key in model_keys:
+            adapted[key] = value
+
+    return adapted, remap_counts
+
+
 def _build_components(config: Dict, vae_ckpt: str, diff_ckpt: str, device: str):
     diffusion_cfg = _load_yaml(config["diffusion_config"])
 
@@ -93,7 +150,34 @@ def _build_components(config: Dict, vae_ckpt: str, diff_ckpt: str, device: str):
 
     model = LatentDiffusionUNet(**diffusion_cfg["model"]).to(device)
     checkpoint = torch.load(diff_ckpt, map_location=device)
-    model.load_state_dict(_extract_model_state(checkpoint), strict=True)
+    raw_state = _extract_model_state(checkpoint)
+
+    # First try strict loading for matching checkpoints.
+    try:
+        model.load_state_dict(raw_state, strict=True)
+    except RuntimeError:
+        adapted_state, remap_counts = _adapt_state_dict_for_baseline_model(raw_state, model)
+        incompatible = model.load_state_dict(adapted_state, strict=False)
+
+        if incompatible.missing_keys:
+            raise RuntimeError(
+                "Failed to load diffusion checkpoint into baseline inference UNet. "
+                "The checkpoint appears architecture-incompatible. "
+                f"Missing keys after compatibility remap: {incompatible.missing_keys}."
+            )
+
+        if remap_counts["mid_block1_to_mid_block"] > 0:
+            print(
+                "WARNING: Remapped checkpoint keys from 'mid_block1.*' to 'mid_block.*' "
+                "for compatibility."
+            )
+        if remap_counts["rgb_conditioner_dropped"] > 0 or remap_counts["mid_block2_dropped"] > 0:
+            print(
+                "WARNING: Checkpoint contains RGB-conditioning weights "
+                "(rgb_conditioner/mid_block2) that are ignored by baseline inference. "
+                "For best quality, use a matching RGB-conditioned inference pipeline."
+            )
+
     model.eval()
 
     scheduler = LatentDiffusionScheduler(**diffusion_cfg["scheduler"], device=device)
