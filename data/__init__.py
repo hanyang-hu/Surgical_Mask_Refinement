@@ -10,7 +10,12 @@ This module provides utilities for:
 
 from .dataset import SurgicalMaskRefinementDataset, VAEDataset
 from .splits import create_splits, load_split
-from .token_dataset import TokenConditionedMaskDataset, create_token_dataset
+
+try:
+    from .token_dataset import TokenConditionedMaskDataset, create_token_dataset
+except ImportError:  # Optional dependency (cv2) may be unavailable in inference-only envs
+    TokenConditionedMaskDataset = None
+    create_token_dataset = None
 
 __all__ = [
     "SurgicalMaskRefinementDataset",
