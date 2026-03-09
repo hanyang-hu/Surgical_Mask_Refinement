@@ -275,7 +275,7 @@ def main():
         source=args.source,
         image_size=image_size,
         load_spatial_map=False,
-        return_paths=False,
+        return_paths=True,
         strict_tokens=strict_tokens,
         transform=None,  # keep deterministic, matching validation/test style
     )
@@ -331,13 +331,18 @@ def main():
 
             if saved_visualizations < args.num_visualizations:
                 # rgb_np = _to_vis_rgb(batch["rgb"][i])
+                # Read the RGB image from the original dataset for better visualization (in case of any preprocessing differences)
+                refined_mask_path = batch["refined_mask_path"][i]
+                rgb_path = refined_mask_path.replace("refined_mask", "RGB")
+                # print(rgb_path)
+                rgb_np = np.array(Image.open(rgb_path).convert("RGB").resize((image_size, image_size)))
                 coarse_np = batch["coarse_mask"][i, 0].detach().cpu().numpy()
                 gt_np = batch["refined_mask"][i, 0].detach().cpu().numpy()
                 pred_np = pred_binary[i, 0].detach().cpu().numpy()
 
                 vis_path = output_dir / "visualizations" / f"{sample_id}_comparison.png"
                 _save_sample_figure(
-                    rgb=None,
+                    rgb=rgb_np,
                     coarse=coarse_np,
                     pred=pred_np,
                     gt=gt_np,
